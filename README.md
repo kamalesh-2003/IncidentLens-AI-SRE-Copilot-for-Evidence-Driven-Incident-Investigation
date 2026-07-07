@@ -50,6 +50,10 @@ Copy `.env.example` to `.env` and fill in:
 | `DEMO_GIT_REPO_PATH`| no       | Repo the commit analyzer inspects                    | defaults to `./demo/app` |
 | `VOYAGE_API_KEY`    | no       | High-quality embeddings for runbook RAG              | https://www.voyageai.com/ |
 | `PROMETHEUS_URL`    | no       | Real metrics source (else uses a mock store)         | your Prometheus server |
+| `LOG_LEVEL`         | no       | Root log level (defaults to `INFO`)                  | `DEBUG` / `INFO` / `WARNING` / … |
+
+Configuration is loaded and validated at startup via `pydantic-settings`
+(`config.Settings`) — environment variables take precedence over `.env`.
 
 If `VOYAGE_API_KEY` is unset, RAG falls back to a local
 `sentence-transformers` model (`all-MiniLM-L6-v2`, ~90MB, downloaded once).
