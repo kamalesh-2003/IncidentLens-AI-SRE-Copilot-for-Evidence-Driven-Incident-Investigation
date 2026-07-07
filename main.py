@@ -54,6 +54,36 @@ def _run_commit_analysis(payload: AlertPayload, settings: Settings) -> None:
         log.exception("commit analysis failed for %s", payload.alert_name)
 
 
+def _run_runbook_retrieval(payload: AlertPayload, settings: Settings) -> None:
+    """Find the runbook(s) most relevant to a firing alert (background task).
+
+    Needs no API key — the retriever falls back to local embeddings — so it runs
+    for every firing alert.
+    """
+    try:
+        from agents.runbook_retriever import retrieve_for_alert
+
+        matches = retrieve_for_alert(
+            alert_name=payload.alert_name,
+            service=payload.service,
+            summary=payload.summary,
+            directory=settings.runbooks_dir,
+            top_k=3,
+        )
+        if matches:
+            top = matches[0]
+            log.info(
+                "runbook match for %s: '%s' (score=%.3f)",
+                payload.alert_name,
+                top.runbook.title,
+                top.score,
+            )
+        else:
+            log.info("no runbook matched %s", payload.alert_name)
+    except Exception:  # never let a diagnostic stage crash the receiver
+        log.exception("runbook retrieval failed for %s", payload.alert_name)
+
+
 @router.get("/health", response_model=HealthResponse, tags=["ops"])
 def health() -> HealthResponse:
     """Liveness probe."""
@@ -82,6 +112,7 @@ def receive_alert(
     )
 
     if payload.status is AlertStatus.firing:
+        background.add_task(_run_runbook_retrieval, payload, settings)
         background.add_task(_run_commit_analysis, payload, settings)
 
     return AlertAck(alert_name=payload.alert_name)

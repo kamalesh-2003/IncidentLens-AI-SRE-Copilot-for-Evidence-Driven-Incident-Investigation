@@ -48,6 +48,7 @@ Copy `.env.example` to `.env` and fill in:
 | `ANTHROPIC_API_KEY` | yes      | Claude reasoning across all stages                   | https://console.anthropic.com/settings/keys |
 | `SLACK_WEBHOOK_URL` | no       | Send briefs to Slack (else prints Block Kit JSON)    | https://api.slack.com/messaging/webhooks |
 | `DEMO_GIT_REPO_PATH`| no       | Repo the commit analyzer inspects                    | defaults to `./demo/app` |
+| `RUNBOOKS_DIR`      | no       | Directory of Markdown runbooks to search             | defaults to `./runbooks` |
 | `VOYAGE_API_KEY`    | no       | High-quality embeddings for runbook RAG              | https://www.voyageai.com/ |
 | `PROMETHEUS_URL`    | no       | Real metrics source (else uses a mock store)         | your Prometheus server |
 | `LOG_LEVEL`         | no       | Root log level (defaults to `INFO`)                  | `DEBUG` / `INFO` / `WARNING` / … |

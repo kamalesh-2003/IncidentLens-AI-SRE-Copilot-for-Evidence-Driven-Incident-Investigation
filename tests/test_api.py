@@ -15,8 +15,9 @@ from main import app
 
 @pytest.fixture
 def client(monkeypatch):
-    # Neutralize the background analysis so no external calls happen.
+    # Neutralize background stages so the API tests stay hermetic and fast.
     monkeypatch.setattr(main, "_run_commit_analysis", lambda *a, **k: None)
+    monkeypatch.setattr(main, "_run_runbook_retrieval", lambda *a, **k: None)
     return TestClient(app)
 
 

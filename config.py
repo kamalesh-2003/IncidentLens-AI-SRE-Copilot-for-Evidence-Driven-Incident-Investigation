@@ -44,6 +44,10 @@ class Settings(BaseSettings):
         default="./demo/app",
         description="Repository the commit analyzer inspects.",
     )
+    runbooks_dir: str = Field(
+        default="./runbooks",
+        description="Directory of Markdown runbooks the retriever searches.",
+    )
     claude_model_reasoning: str = Field(default=DEFAULT_REASONING_MODEL)
     claude_model_fast: str = Field(default=DEFAULT_FAST_MODEL)
     log_level: str = Field(default="INFO", description="Root logging level.")
