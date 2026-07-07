@@ -48,6 +48,10 @@ class Settings(BaseSettings):
         default="./runbooks",
         description="Directory of Markdown runbooks the retriever searches.",
     )
+    postmortems_dir: str = Field(
+        default="./postmortems",
+        description="Directory the postmortem generator writes Markdown reports to.",
+    )
     claude_model_reasoning: str = Field(default=DEFAULT_REASONING_MODEL)
     claude_model_fast: str = Field(default=DEFAULT_FAST_MODEL)
     log_level: str = Field(default="INFO", description="Root logging level.")

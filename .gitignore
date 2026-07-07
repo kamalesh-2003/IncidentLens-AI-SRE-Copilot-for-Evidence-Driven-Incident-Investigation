@@ -13,5 +13,7 @@ env/
 .ruff_cache/
 
 *.log
-postmortems/
+# Track the postmortems/ folder but not the generated reports.
+postmortems/*
+!postmortems/.gitkeep
 .DS_Store

@@ -155,6 +155,32 @@ def _run_investigation(payload: AlertPayload, settings: Settings) -> None:
         log.exception("slack posting failed for %s", payload.alert_name)
 
 
+def _run_postmortem(payload: AlertPayload, settings: Settings) -> None:
+    """Generate a postmortem for a resolved incident (background task).
+
+    Re-runs the diagnostic stages over the now-bounded incident window, then
+    writes a Markdown postmortem (AI-drafted narrative when a key is set, else a
+    deterministic template).
+    """
+    commit = _analyze_commits(payload, settings)
+    runbook = _retrieve_runbook(payload, settings)
+    impact = _estimate_impact(payload, settings)
+
+    try:
+        from agents.postmortem_gen import generate_postmortem
+
+        _, path = generate_postmortem(
+            payload,
+            commit=commit,
+            runbook=runbook,
+            impact=impact,
+            settings=settings,
+        )
+        log.info("postmortem for %s written to %s", payload.alert_name, path)
+    except Exception:  # never let the postmortem stage crash the receiver
+        log.exception("postmortem generation failed for %s", payload.alert_name)
+
+
 @router.get("/health", response_model=HealthResponse, tags=["ops"])
 def health() -> HealthResponse:
     """Liveness probe."""
@@ -184,6 +210,8 @@ def receive_alert(
 
     if payload.status is AlertStatus.firing:
         background.add_task(_run_investigation, payload, settings)
+    elif payload.status is AlertStatus.resolved:
+        background.add_task(_run_postmortem, payload, settings)
 
     return AlertAck(alert_name=payload.alert_name)
 

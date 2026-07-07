@@ -15,8 +15,9 @@ from main import app
 
 @pytest.fixture
 def client(monkeypatch):
-    # Neutralize the background investigation so the API tests stay hermetic and fast.
+    # Neutralize the background stages so the API tests stay hermetic and fast.
     monkeypatch.setattr(main, "_run_investigation", lambda *a, **k: None)
+    monkeypatch.setattr(main, "_run_postmortem", lambda *a, **k: None)
     return TestClient(app)
 
 
