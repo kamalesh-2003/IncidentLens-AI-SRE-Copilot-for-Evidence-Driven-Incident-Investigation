@@ -11,27 +11,33 @@ Run locally with::
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, status
 
 from config import Settings, configure_logging, get_settings
 from schemas import AlertAck, AlertPayload, AlertStatus, HealthResponse
 
+if TYPE_CHECKING:
+    from agents.commit_analyzer import CommitCorrelation
+    from agents.impact_estimator import ImpactEstimate
+    from agents.runbook_retriever import RunbookMatch
+
 log = logging.getLogger("incidentlens.api")
 
 router = APIRouter()
 
 
-def _run_commit_analysis(payload: AlertPayload, settings: Settings) -> None:
-    """Correlate a recent commit with a firing alert (background task).
+def _analyze_commits(payload: AlertPayload, settings: Settings) -> CommitCorrelation | None:
+    """Correlate a recent commit with a firing alert.
 
     Imported lazily and guarded so the receiver has no hard dependency on the
-    Anthropic SDK or an API key — it still accepts alerts without them.
+    Anthropic SDK or an API key — it still accepts alerts without them. Returns
+    ``None`` when the stage is skipped or fails.
     """
     if not settings.anthropic_api_key:
         log.info("ANTHROPIC_API_KEY unset; skipping commit analysis")
-        return
+        return None
 
     try:
         from agents.commit_analyzer import analyze_commits
@@ -50,15 +56,18 @@ def _run_commit_analysis(payload: AlertPayload, settings: Settings) -> None:
             verdict.suspected_commit,
             verdict.confidence,
         )
+        return verdict
     except Exception:  # never let a diagnostic stage crash the receiver
         log.exception("commit analysis failed for %s", payload.alert_name)
+        return None
 
 
-def _run_runbook_retrieval(payload: AlertPayload, settings: Settings) -> None:
-    """Find the runbook(s) most relevant to a firing alert (background task).
+def _retrieve_runbook(payload: AlertPayload, settings: Settings) -> RunbookMatch | None:
+    """Find the runbook most relevant to a firing alert.
 
     Needs no API key — the retriever falls back to local embeddings — so it runs
-    for every firing alert.
+    for every firing alert. Returns the top match, or ``None`` if none matched or
+    the stage fails.
     """
     try:
         from agents.runbook_retriever import retrieve_for_alert
@@ -78,17 +87,20 @@ def _run_runbook_retrieval(payload: AlertPayload, settings: Settings) -> None:
                 top.runbook.title,
                 top.score,
             )
-        else:
-            log.info("no runbook matched %s", payload.alert_name)
+            return top
+        log.info("no runbook matched %s", payload.alert_name)
+        return None
     except Exception:  # never let a diagnostic stage crash the receiver
         log.exception("runbook retrieval failed for %s", payload.alert_name)
+        return None
 
 
-def _run_impact_estimation(payload: AlertPayload, settings: Settings) -> None:
-    """Estimate the incident's user impact (background task).
+def _estimate_impact(payload: AlertPayload, settings: Settings) -> ImpactEstimate | None:
+    """Estimate the incident's user impact.
 
     Uses Prometheus when configured, else a deterministic mock store, so it runs
-    for every firing alert without external dependencies.
+    for every firing alert without external dependencies. Returns ``None`` on
+    failure.
     """
     try:
         from agents.impact_estimator import estimate_impact
@@ -107,8 +119,40 @@ def _run_impact_estimation(payload: AlertPayload, settings: Settings) -> None:
             estimate.estimated_affected_users,
             estimate.source,
         )
+        return estimate
     except Exception:  # never let a diagnostic stage crash the receiver
         log.exception("impact estimation failed for %s", payload.alert_name)
+        return None
+
+
+def _run_investigation(payload: AlertPayload, settings: Settings) -> None:
+    """Run the diagnostic stages and post a consolidated incident brief.
+
+    Interim coordinator (a LangGraph orchestrator will subsume this): each stage
+    is independently guarded, so a missing finding is simply omitted from the
+    brief rather than aborting it.
+    """
+    commit = _analyze_commits(payload, settings)
+    runbook = _retrieve_runbook(payload, settings)
+    impact = _estimate_impact(payload, settings)
+
+    try:
+        from agents.slack_poster import post_incident_brief
+
+        posted = post_incident_brief(
+            payload,
+            commit=commit,
+            runbook=runbook,
+            impact=impact,
+            settings=settings,
+        )
+        log.info(
+            "incident brief %s for %s",
+            "posted to Slack" if posted else "printed to stdout",
+            payload.alert_name,
+        )
+    except Exception:  # never let the presentation stage crash the receiver
+        log.exception("slack posting failed for %s", payload.alert_name)
 
 
 @router.get("/health", response_model=HealthResponse, tags=["ops"])
@@ -139,9 +183,7 @@ def receive_alert(
     )
 
     if payload.status is AlertStatus.firing:
-        background.add_task(_run_runbook_retrieval, payload, settings)
-        background.add_task(_run_impact_estimation, payload, settings)
-        background.add_task(_run_commit_analysis, payload, settings)
+        background.add_task(_run_investigation, payload, settings)
 
     return AlertAck(alert_name=payload.alert_name)
 
