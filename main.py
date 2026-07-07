@@ -84,6 +84,33 @@ def _run_runbook_retrieval(payload: AlertPayload, settings: Settings) -> None:
         log.exception("runbook retrieval failed for %s", payload.alert_name)
 
 
+def _run_impact_estimation(payload: AlertPayload, settings: Settings) -> None:
+    """Estimate the incident's user impact (background task).
+
+    Uses Prometheus when configured, else a deterministic mock store, so it runs
+    for every firing alert without external dependencies.
+    """
+    try:
+        from agents.impact_estimator import estimate_impact
+
+        estimate = estimate_impact(
+            service=payload.service,
+            started_at=payload.started_at,
+            resolved_at=payload.resolved_at,
+        )
+        log.info(
+            "impact for %s: ~%d requests, %d failed (%.1f%%), ~%d users affected [source=%s]",
+            payload.alert_name,
+            estimate.total_requests,
+            estimate.failed_requests,
+            estimate.error_rate_pct,
+            estimate.estimated_affected_users,
+            estimate.source,
+        )
+    except Exception:  # never let a diagnostic stage crash the receiver
+        log.exception("impact estimation failed for %s", payload.alert_name)
+
+
 @router.get("/health", response_model=HealthResponse, tags=["ops"])
 def health() -> HealthResponse:
     """Liveness probe."""
@@ -113,6 +140,7 @@ def receive_alert(
 
     if payload.status is AlertStatus.firing:
         background.add_task(_run_runbook_retrieval, payload, settings)
+        background.add_task(_run_impact_estimation, payload, settings)
         background.add_task(_run_commit_analysis, payload, settings)
 
     return AlertAck(alert_name=payload.alert_name)
