@@ -71,6 +71,7 @@ Copy `.env.example` to `.env` and fill in:
 | Variable            | Required | Purpose                                              | Where to get it |
 |---------------------|----------|------------------------------------------------------|-----------------|
 | `ANTHROPIC_API_KEY` | recommended | Claude reasoning (commit correlation, postmortem narrative). Without it those stages skip / use templates. | https://console.anthropic.com/settings/keys |
+| `WEBHOOK_TOKEN`     | recommended | Shared secret for `POST /webhook/alert` (`Authorization: Bearer …`). Unset = open (dev only). | `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `SLACK_WEBHOOK_URL` | no       | Send briefs to Slack (else prints Block Kit JSON)    | https://api.slack.com/messaging/webhooks |
 | `DEMO_GIT_REPO_PATH`| no       | Repo the commit analyzer inspects                    | defaults to `./demo/app` |
 | `RUNBOOKS_DIR`      | no       | Directory of Markdown runbooks to search             | defaults to `./runbooks` |
@@ -89,3 +90,44 @@ If `VOYAGE_API_KEY` is unset, RAG falls back to a local
 
 - Python 3.11+
 - Git available on `PATH` (the commit analyzer shells out to it)
+
+## Development
+
+```powershell
+pip install -e ".[dev]"   # runtime + pytest + ruff
+ruff check .
+pytest
+```
+
+Dependencies are declared in `pyproject.toml` (source of truth); `requirements.txt`
+mirrors them for convenience. CI (`.github/workflows/ci.yml`) runs ruff + pytest on
+Python 3.11 and 3.12.
+
+## Deployment
+
+```powershell
+docker build -t incidentlens .
+docker run -p 8000:8000 --env-file .env incidentlens
+```
+
+The image installs `git` (needed by the commit analyzer), runs as a non-root user,
+and defines a `/health` HEALTHCHECK.
+
+## Production notes
+
+IncidentLens is designed to run end-to-end with zero config for evaluation, and is
+hardened in the ways a small service should be (validated config, constant-time
+webhook auth, per-stage failure isolation, non-root container, CI). Before putting
+it in front of real production alert traffic, weigh these deliberate scope choices:
+
+- **Set `WEBHOOK_TOKEN`.** The webhook is unauthenticated when it is unset.
+- **Background execution.** Investigations run in FastAPI `BackgroundTasks` (in
+  process). That is fine for modest alert volume; for high volume or long-running
+  LLM calls, move the workflow onto a task queue (e.g. Celery/RQ/Arq) or LangGraph
+  with a persistent checkpointer.
+- **No persistence / idempotency.** Each webhook delivery re-runs the pipeline;
+  duplicate deliveries produce duplicate work. Add a dedupe key and a store if your
+  alert source retries.
+- **Metrics are mocked** unless `PROMETHEUS_URL` is set, and `demo/app` ships empty
+  (point `DEMO_GIT_REPO_PATH` at the real service repo for meaningful commit
+  correlation).

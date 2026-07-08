@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     slack_webhook_url: str | None = Field(default=None, description="Slack incoming webhook URL.")
     voyage_api_key: str | None = Field(default=None, description="Voyage AI embeddings key.")
     prometheus_url: str | None = Field(default=None, description="Prometheus HTTP API base URL.")
+    webhook_token: str | None = Field(
+        default=None,
+        description=(
+            "Shared secret required on the alert webhook via 'Authorization: Bearer'. "
+            "When unset, the webhook is unauthenticated (dev only)."
+        ),
+    )
 
     # Behavior.
     demo_git_repo_path: str = Field(

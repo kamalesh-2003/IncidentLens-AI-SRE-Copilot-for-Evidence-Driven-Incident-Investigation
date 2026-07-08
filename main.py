@@ -13,9 +13,10 @@ Run locally with::
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, status
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, status
 
 from config import Settings, configure_logging, get_settings
 from schemas import AlertAck, AlertPayload, HealthResponse
@@ -23,6 +24,26 @@ from schemas import AlertAck, AlertPayload, HealthResponse
 log = logging.getLogger("incidentlens.api")
 
 router = APIRouter()
+
+
+def verify_webhook_token(
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    """Authenticate the alert webhook against ``WEBHOOK_TOKEN`` when configured.
+
+    When no token is set the webhook is open (dev convenience). When set, callers
+    must send ``Authorization: Bearer <token>``; the comparison is constant-time.
+    """
+    if not settings.webhook_token:
+        return
+    scheme, _, value = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not secrets.compare_digest(value, settings.webhook_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or missing webhook token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def _run_incident(payload: AlertPayload, settings: Settings) -> None:
@@ -52,6 +73,7 @@ def health() -> HealthResponse:
     response_model=AlertAck,
     status_code=status.HTTP_202_ACCEPTED,
     tags=["alerts"],
+    dependencies=[Depends(verify_webhook_token)],
 )
 def receive_alert(
     payload: AlertPayload,

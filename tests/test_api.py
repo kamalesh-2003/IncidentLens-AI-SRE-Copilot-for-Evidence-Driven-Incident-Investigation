@@ -10,7 +10,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+from config import Settings, get_settings
 from main import app
+
+FIRING_ALERT = {
+    "alert_name": "HighErrorRate",
+    "severity": "critical",
+    "service": "checkout",
+    "started_at": "2026-07-03T14:12:00Z",
+}
 
 
 @pytest.fixture
@@ -81,3 +89,30 @@ def test_invalid_severity_rejected(client):
         },
     )
     assert resp.status_code == 422
+
+
+@pytest.fixture
+def authed_client(client):
+    # Enable webhook auth by overriding settings with a token.
+    app.dependency_overrides[get_settings] = lambda: Settings(webhook_token="s3cret")
+    yield client
+    app.dependency_overrides.pop(get_settings, None)
+
+
+def test_webhook_rejects_missing_token(authed_client):
+    resp = authed_client.post("/webhook/alert", json=FIRING_ALERT)
+    assert resp.status_code == 401
+
+
+def test_webhook_rejects_wrong_token(authed_client):
+    resp = authed_client.post(
+        "/webhook/alert", json=FIRING_ALERT, headers={"Authorization": "Bearer nope"}
+    )
+    assert resp.status_code == 401
+
+
+def test_webhook_accepts_valid_token(authed_client):
+    resp = authed_client.post(
+        "/webhook/alert", json=FIRING_ALERT, headers={"Authorization": "Bearer s3cret"}
+    )
+    assert resp.status_code == 202
