@@ -1,8 +1,10 @@
 """IncidentLens webhook receiver.
 
-Accepts production alert payloads, validates them, and hands firing alerts to the
-investigation pipeline (commit correlation, runbook retrieval, impact estimation,
-Slack posting, and postmortem generation).
+Accepts production alert payloads, validates them, and hands each one to the
+LangGraph incident workflow (:mod:`orchestrator`) as a non-blocking background
+task. The workflow runs the diagnostic stages (commit correlation, runbook
+retrieval, impact estimation) and then, by alert status, either posts a Slack
+brief (firing) or writes a postmortem (resolved).
 
 Run locally with::
 
