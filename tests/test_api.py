@@ -1,7 +1,7 @@
 """Tests for the webhook receiver.
 
-These exercise the API surface with FastAPI's TestClient. The commit-analysis
-background task is patched out so the tests are hermetic and never call the
+These exercise the API surface with FastAPI's TestClient. The background
+incident workflow is patched out so the tests are hermetic and never call the
 Anthropic API.
 """
 from __future__ import annotations
@@ -15,9 +15,8 @@ from main import app
 
 @pytest.fixture
 def client(monkeypatch):
-    # Neutralize the background stages so the API tests stay hermetic and fast.
-    monkeypatch.setattr(main, "_run_investigation", lambda *a, **k: None)
-    monkeypatch.setattr(main, "_run_postmortem", lambda *a, **k: None)
+    # Neutralize the background workflow so the API tests stay hermetic and fast.
+    monkeypatch.setattr(main, "_run_incident", lambda *a, **k: None)
     return TestClient(app)
 
 
